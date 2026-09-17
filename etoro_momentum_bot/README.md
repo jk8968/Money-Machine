@@ -9,7 +9,8 @@ Exit rule: a position is closed when weekly candle opens and closes below 50 wee
 The script currently tracks 91 assets, including: 
 - **Crypto** (BTC, ETH, SOL, BNB, XRP, DOT, LINK),
 - **ETFs** (SPY, QQQ, XDJP.L, 2800.HK, GLD, SLV, PALL, PPLT, XLE, COPX, PSLV, URA, SIL, IXC)
-- **Stocks** (AAPL, MSFT, NVDA, META, AMZN, GOOGL, AMD, TSM, BABA, TM, RIO, BHP, XOM, CCJ and others). 
+- **Stocks:** (PHG, TM, AAPL, META, NFLX, KO, NESM, PEP, BABA, MCD, ADBE, SHOP, NKE, SPOT, 0700.HK, OR.PA, 1810, SIE.DE, INTC, IBKR, DELL, MDLZ, 7974.T, ADSK, VOLV-B.ST, VOW.DE, GRMN, HEIA.NV, NVDA, MCHP, HPQ, EBAY, PUM, MGA, ZBRA, AMZN, MSFT, SMSN, AMD, ADS, TSM, MSI, RIO, CCJ, GOOGL, JNJ, SAP, CSCO, DIS, TXN, SND, BHP, SWK, 0992.HK, PAAS, WPM, AEM, NEM, B, FCX, ALB, XOM, FRES.L, AG, 01211.HK)
+
 The full list can be expanded manually and is configured in **RAW_UNIVERSE** variable.
 
 ## Setup
@@ -17,6 +18,8 @@ Download the files from the repositroy and put them in a permanent **folder**, w
 
 Add your eToro **API credentials** under **ETORO_API_KEY = "your_key"** and **ETORO_USER_KEY = "your_user_key"**. 
 You can find those keys under [eToro web](https://www.etoro.com/settings/trade).
+
+Run **install.bat** file, this will install python if its not yet installed and install the libraries that are needed for the script to run
 
 To make the bot run automatically every week search for **Task Scheduler** in windows. Create new task using **Create Task**.  
 
