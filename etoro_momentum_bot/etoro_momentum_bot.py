@@ -511,7 +511,7 @@ def entry_trend_pass(features: Optional[Dict[str, Any]]) -> bool:
     close = features["Close"]
     sma50 = features["SMA50"]
     sma200 = features["SMA200"]
-    return all(np.isfinite(x) for x in [close, sma50, sma200]) and close > sma50 and close > sma200
+    return all(np.isfinite(x) for x in [close, sma50, sma200]) and close > sma50 
 
 
 def stop_triggered(features: Optional[Dict[str, Any]]) -> bool:
