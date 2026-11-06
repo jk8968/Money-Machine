@@ -3,7 +3,7 @@ setlocal EnableExtensions
 title 3/6/12 Momentum Bot - Installer
 
 echo ============================================================
-echo        3/6/12 MOMENTUM BOT - INSTALLER
+echo        BREAKOUT BOT - INSTALLER
 echo ============================================================
 echo.
 
