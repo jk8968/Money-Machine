@@ -1,169 +1,56 @@
-# 8-Week Gold / Silver / Bitcoin Momentum Bot
+# 3/6/12 Momentum Bot
 
-A bot for managing a portfolio using **relative and absolute momentum** across Gold, Silver, and Bitcoin.
+A bot for managing a portfolio using momentum.
 
-The bot runs once per week and compares the **8-week return** of:
+The bot runs once per week and ranks assets using: 20% × 3-month returns, 40% × 6-month returns and 40% × 12-month returns. It then selects the top **7 assets**, each position is roughly 14.29% of account equity.
 
-- **Gold** (GLD)
-- **Silver** (SLV)
-- **Bitcoin** (BTC)
+Exit rule: a position is closed when weekly candle opens and closes below 50 weekly MA.
 
-Each week, the bot selects the asset with the highest 8-week return.
+The script currently tracks 91 assets, including: 
+- **Crypto** (BTC, ETH, SOL, BNB, XRP, DOT, LINK),
+- **ETFs** (SPY, QQQ, XDJP.L, 2800.HK, GLD, SLV, PALL, PPLT, XLE, COPX, PSLV, URA, SIL, IXC)
+- **Stocks:** (PHG, TM, AAPL, META, NFLX, KO, NESM, PEP, BABA, MCD, ADBE, SHOP, NKE, SPOT, 0700.HK, OR.PA, 1810, SIE.DE, INTC, IBKR, DELL, MDLZ, 7974.T, ADSK, VOLV-B.ST, VOW.DE, GRMN, HEIA.NV, NVDA, MCHP, HPQ, EBAY, PUM, MGA, ZBRA, AMZN, MSFT, SMSN, AMD, ADS, TSM, MSI, RIO, CCJ, GOOGL, JNJ, SAP, CSCO, DIS, TXN, SND, BHP, SWK, 0992.HK, PAAS, WPM, AEM, NEM, B, FCX, ALB, XOM, FRES.L, AG, 01211.HK)
 
-The portfolio is allocated approximately **100% to the strongest asset**, while keeping the configured small cash reserve.
+The full list can be expanded manually and is configured in **RAW_UNIVERSE** variable.
 
-## Strategy
+## Setup
+Download the files from the repositroy and put them in a permanent **folder**, where they will be able to reside without moving. 
 
-The strategy is:
+Add your eToro **API credentials** under **ETORO_API_KEY = "your_key"** and **ETORO_USER_KEY = "your_user_key"**. 
+You can find those keys under [eToro web](https://www.etoro.com/settings/trade).
 
-**REL_ABS_GOLD_SILVER_BTC_8W**
+Run **install.bat** file, this will install python if its not yet installed and install the libraries that are needed for the script to run
 
-For every completed week, the bot:
+To make the bot run automatically every week search for **Task Scheduler** in windows. Create new task using **Create Task**.  
 
-1. Calculates the 8-week return of **Gold (GLD)**.
-2. Calculates the 8-week return of **Silver (SLV)**.
-3. Calculates the 8-week return of **Bitcoin (BTC)**.
-4. Ranks the three assets by their 8-week return.
-5. Selects the asset with the highest return.
-6. Holds that asset only if its 8-week return is **positive**.
-7. If all three assets have returns of **0% or less**, the portfolio moves to **cash**.
+<p align="center">
+<img width="1267" height="928" alt="image" src="https://github.com/user-attachments/assets/f0ad4f00-3c15-4eb9-b42a-b82f503f96e9" />
+</p>
 
-This combines:
+When there under General press **Run with highest privileges**, otherwise administrator privileges might prevent the script from running.
 
-- **Relative momentum** — choose the strongest asset.
-- **Absolute momentum** — only invest when the strongest asset has positive momentum.
+<p align="center">
+<img width="636" height="486" alt="image" src="https://github.com/user-attachments/assets/45938ea7-f653-4354-b2c1-7c94ff970334" />
+</p>
 
-## Weekly Rebalancing
+Under **Triggers**, press New and select the schedule. Let it run **Weekly** on **Monday** ideally, for European time choose something around **16:00**. The US Markets open around 15.30 under Ljubljana time.
 
-The bot is intended to run **once per week**.
+<p align="center">
+<img width="590" height="518" alt="image" src="https://github.com/user-attachments/assets/628fbd23-8018-43db-ad08-1c8cb12a0b3c" />
+</p>
 
-Signals are calculated using completed weekly data.
+Under **Actions**, choose New, select Start a program, and press **Browse**. Then choose the **run_etoro_bot.bat** file you download, this is the executable file. You need to **modify** the run_etoro_bot.bat file, to **point to the folder** in which you saved the file!
 
-The strategy uses **Friday-ending weekly closes** and compares the latest completed weekly close with the close from 8 weeks earlier.
+<p align="center">
+<img width="459" height="504" alt="image" src="https://github.com/user-attachments/assets/0aa3ad2b-567d-4505-bc08-d14b4d2999a8" />
+</p>
 
-The signal from the completed week is executed during the **next executable market session**.
+<p align="center">
+<img width="908" height="150" alt="image" src="https://github.com/user-attachments/assets/2bcc70d5-bf50-47e5-9b53-781c1f338bda" />
+</p>
 
-Normally:
+Under **Conditions** choose **Start only if the following network connection is avalible: Any connection**. This will run the script only when PC is connected to the internet. And under **Settings** choose **Run task as soon as possible after the schedule is missed**.
 
-**Friday close → calculate signal → trade on the next market session**
 
-If the current winner changes, the bot:
 
-1. Closes the previous strategy holding.
-2. Waits for the eToro close to settle when necessary.
-3. Uses the available capital to buy the new winner.
 
-If the current winner remains the same, the bot keeps the existing position and avoids unnecessary trading.
-
-## Cash Rule
-
-The strategy does not always have to be invested.
-
-If the highest 8-week return among Gold, Silver, and Bitcoin is not positive, the target allocation is:
-
-**100% cash**
-
-The bot closes existing strategy positions and waits for a future weekly signal to become positive.
-
-## Portfolio Allocation
-
-Unlike the previous 3/6/12 momentum strategy, this strategy does not hold multiple assets at the same time.
-
-The target portfolio is:
-
-- **1 asset at approximately 100% of strategy capital**, or
-- **100% cash**
-
-A small configurable cash reserve is retained for execution purposes.
-
-## Strategy Universe
-
-The strategy uses only three assets:
-
-- **GLD** — Gold ETF
-- **SLV** — Silver ETF
-- **BTC** — Bitcoin
-
-The universe is intentionally limited because these are the assets used by the tested:
-
-**REL_ABS_GOLD_SILVER_BTC_8W**
-
-strategy.
-
-## Exit Rule
-
-There is no separate moving-average stop-loss.
-
-A position is exited when the weekly momentum signal changes.
-
-The bot exits when:
-
-- another asset becomes the strongest positive 8-week momentum asset, or
-- the best 8-week return falls to **0% or below**.
-
-Therefore, the same momentum model controls both **entries and exits**.
-
-## No Moving Average Filters
-
-This strategy does **not** use:
-
-- 50-week moving-average entry filters,
-- 200-week moving-average entry filters,
-- 50-week moving-average stop-losses.
-
-Those rules belonged to the previous 3/6/12 momentum strategy and are not part of **REL_ABS_GOLD_SILVER_BTC_8W**.
-
-## eToro Execution
-
-The bot retains the existing eToro execution framework.
-
-It includes:
-
-- **eToro DEMO account execution**
-- **LONG positions only**
-- **x1 leverage only**
-- **REAL or CFD settlement where supported**
-- Pending opening-order detection
-- Pending closing-order detection
-- Duplicate-order protection
-- Close-settlement handling before replacement purchases
-- Automatic cleanup of non-strategy positions
-- Automatic cleanup of unsupported leveraged or short positions
-- Configurable cash reserve
-- eToro minimum-position checks
-- API write-rate protection
-- Protection against retrying trades when execution state is unknown
-
-## No External Database
-
-The bot does not require an external database or local state file.
-
-Each run reconstructs the required state from:
-
-- current eToro positions,
-- current pending opening orders,
-- current pending closing orders,
-- current account equity and available cash,
-- current market data,
-- the latest completed weekly momentum signal.
-
-This makes the bot safe to run repeatedly without relying on a separate portfolio-state database.
-
-## Market Data
-
-Market data is downloaded using **Yahoo Finance / yfinance**.
-
-The strategy uses:
-
-- `GLD` for Gold,
-- `SLV` for Silver,
-- `BTC-USD` for Bitcoin market data.
-
-The corresponding eToro instruments are resolved through the eToro instrument catalogue.
-
-## Dependencies
-
-Install the required Python packages with:
-
-```bash
-pip install requests pandas numpy yfinance
