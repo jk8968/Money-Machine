@@ -1,10 +1,10 @@
 # Single Asset Beakout Bot
 
-A bot for managing a portfolio using momentum.
+A bot for managing a portfolio using weekly breakout and momentum strategy.
 
-The bot runs once per week and ranks assets using: 20% × 3-month returns, 40% × 6-month returns and 40% × 12-month returns. It then selects the top **7 assets**, each position is roughly 14.29% of account equity.
+The bot runs once per week and identifies assets whose weekly closing price breaks above the high of the previous 50 weeks, provided the closing price is also above the 100-week moving average. Eligible assets are then ranked by their 26-week returns, and the bot selects the highest-ranked asset, allocating 100% of equity to it. If no assets qualify, the portfolio remains in cash.
 
-Exit rule: a position is closed when weekly candle opens and closes below 50 weekly MA.
+Exit rule: A position is closed when the completed weekly candle closes below the low of the previous 20 weeks, or when another eligible asset takes the top position in the momentum ranking.
 
 The script currently tracks 91 assets, including: 
 - **Crypto** (BTC, ETH, SOL, BNB, XRP, DOT, LINK),
