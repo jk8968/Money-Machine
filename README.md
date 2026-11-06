@@ -1,5 +1,5 @@
 # Money Machine
-A collection of ools used for constructing and monitoring my portfolio.
+A collection of tools used for constructing and monitoring my portfolio.
 
 The `app` folder contains Android and iOS app for helping with my portfolio decisions. It helps identify possible buying opportunities. It ranks assets on the watchlist based on momentum and checks whether an asset is below its **200-week moving average** for a possible below value buy. 
 
