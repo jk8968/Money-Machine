@@ -1,5 +1,5 @@
 """
-eToro DEMO REL_ABS_GOLD_SILVER_BTC_8W bot
+eToro DEMO REL_ABS_GOLD_SILVER_BTC_8W + SMA40 STOP bot
 ==========================================
 
 Strategy
@@ -11,23 +11,28 @@ Strategy
       SILVER -> SLV
       BTC    -> BTC-USD for signals / BTC on eToro
 - Build a common daily calendar using dates on which GLD, SLV and BTC all have data.
-- Resample common closes to Friday-ending weeks and use only the latest COMPLETED
-  Friday-ending week before the current week's Monday.
+- Resample common daily opens/closes to Friday-ending weeks and use only the
+  latest COMPLETED Friday-ending week before the current week's Monday.
 - Compute each asset's 8-week total return:
       8W return = latest weekly close / weekly close 8 weeks earlier - 1
 - Relative + absolute momentum rule:
       * choose the asset with the highest 8-week return;
       * if that best return is > 0, target 100% of strategy capital in that asset;
       * otherwise target CASH.
+- SMA40 stop: if the highest-ranked positive-8W asset's COMPLETED weekly OPEN
+  AND CLOSE are BOTH strictly below its 40-week SMA of weekly closes, target
+  CASH instead (never substitute the second-best ranked asset).
+  Re-enter when the same winner's SMA40 stop clears or a new winner qualifies.
+  This is a weekly signal rule, not an intraday broker stop order.
 - On a target change, close all non-target direct holdings and buy/top-up the target
   using available cash after close settlement, while retaining CASH_RESERVE_USD.
-- There is NO 50/200-week entry filter and NO separate moving-average stop. Weekly
-  rotation (including a cash signal) is the complete exit/risk rule for this strategy.
+- There is NO 50/200-week entry filter. Weekly rotation, absolute momentum and
+  the additional SMA40 cash veto form this strategy's entire exit/risk rule.
 
 Idempotency / no external database
 ----------------------------------
 Every run reconstructs state from:
-- the latest completed 8-week momentum signal;
+- the latest completed 8-week momentum signal and 40-week MA stop;
 - current eToro positions;
 - current eToro pending open/close orders.
 
@@ -96,6 +101,7 @@ EXECUTE_TRADES = True
 
 STRATEGY_ASSETS = ("GLD", "SLV", "BTC")
 MOMENTUM_WEEKS = 8
+STOP_SMA_WEEKS = 40  # weekly OPEN and CLOSE must both be strictly below SMA40
 TARGET_WEIGHT = 1.0
 TOPUP_TOLERANCE_USD = 1.00
 
@@ -375,23 +381,25 @@ class MomentumSignal:
     returns_8w: Dict[str, float]
     start_closes: Dict[str, float]
     latest_closes: Dict[str, float]
+    latest_opens: Dict[str, float]
+    sma40_values: Dict[str, float]
     winner: str
     best_return: float
+    raw_target_asset: Optional[str]
+    sma40_stop_triggered: bool
     target_asset: Optional[str]
 
 
-def completed_weekly_closes(
+def completed_weekly_open_close(
     market_data: Dict[str, pd.DataFrame],
     now_local: datetime,
-) -> pd.DataFrame:
-    """
-    Recreate the weekly signal calendar without using any current-week data.
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Reconstruct fully completed Friday-ending weekly OPEN and CLOSE prices.
 
-    The strategy is intended to run on Monday.  To keep repeated runs during the
-    same week idempotent, freeze the signal cutoff at Monday 00:00 Europe/Ljubljana.
-    Daily closes are first aligned to dates shared by GLD, SLV and BTC, matching
-    the backtest's common executable-calendar idea for the assets actually used by
-    this strategy.  Friday-ending weeks then use the last common close in the week.
+    Match the SMA40 backtest: first restrict daily bars to dates shared by
+    GLD, SLV and BTC, then take the FIRST common daily open and LAST common
+    daily close within each Friday-ending week. Freeze every run in the same
+    calendar week at Monday 00:00 Europe/Ljubljana to avoid partial-week data.
     """
     missing = [asset for asset in STRATEGY_ASSETS if asset not in market_data]
     if missing:
@@ -400,52 +408,79 @@ def completed_weekly_closes(
     cutoff_local = monday_of_week(now_local)
     cutoff_naive = pd.Timestamp(cutoff_local.replace(tzinfo=None))
 
-    closes = pd.concat(
-        {asset: market_data[asset]["Close"] for asset in STRATEGY_ASSETS},
+    common = pd.concat(
+        {asset: market_data[asset][["Open", "Close"]] for asset in STRATEGY_ASSETS},
         axis=1,
         join="inner",
-    )
-    closes = closes.replace([np.inf, -np.inf], np.nan).dropna(how="any")
-    closes = closes[closes.index < cutoff_naive]
-    if closes.empty:
-        raise RuntimeError("No common GLD/SLV/BTC closes are available before this week's Monday cutoff.")
+    ).replace([np.inf, -np.inf], np.nan).dropna(how="any")
+    common = common.loc[common.index < cutoff_naive]
+    if common.empty:
+        raise RuntimeError("No common GLD/SLV/BTC open/close data before this week's Monday cutoff.")
 
-    weekly = closes.resample("W-FRI").last().dropna(how="any")
-    weekly = weekly[weekly.index < cutoff_naive]
-    if len(weekly) < MOMENTUM_WEEKS + 1:
+    daily_open = common.xs("Open", axis=1, level=1)[list(STRATEGY_ASSETS)]
+    daily_close = common.xs("Close", axis=1, level=1)[list(STRATEGY_ASSETS)]
+    weekly_open = daily_open.resample("W-FRI").first()
+    weekly_close = daily_close.resample("W-FRI").last()
+    good = weekly_open.notna().all(axis=1) & weekly_close.notna().all(axis=1)
+    weekly_open = weekly_open.loc[good & (weekly_open.index < cutoff_naive)].astype(float)
+    weekly_close = weekly_close.loc[good & (weekly_close.index < cutoff_naive)].astype(float)
+
+    required = max(MOMENTUM_WEEKS + 1, STOP_SMA_WEEKS)
+    if len(weekly_close) < required:
         raise RuntimeError(
-            f"Need at least {MOMENTUM_WEEKS + 1} completed weekly observations; got {len(weekly)}."
+            f"Need at least {required} completed common weekly observations for "
+            f"8W momentum and SMA{STOP_SMA_WEEKS}; got {len(weekly_close)}."
         )
-    return weekly.astype(float)
+    return weekly_open, weekly_close
 
 
 def build_8w_signal(
     market_data: Dict[str, pd.DataFrame],
     now_local: datetime,
 ) -> MomentumSignal:
-    weekly = completed_weekly_closes(market_data, now_local)
-    latest = weekly.iloc[-1]
-    start = weekly.iloc[-(MOMENTUM_WEEKS + 1)]
+    weekly_open, weekly_close = completed_weekly_open_close(market_data, now_local)
+    latest = weekly_close.iloc[-1]
+    latest_open = weekly_open.iloc[-1]
+    start = weekly_close.iloc[-(MOMENTUM_WEEKS + 1)]
 
     returns = latest / start - 1.0
     if not np.isfinite(returns.to_numpy(dtype=float)).all():
         raise RuntimeError("Non-finite 8-week momentum return in required strategy assets.")
 
+    # Identical relative and absolute momentum decision as the original bot.
     winner = str(returns.idxmax())
     best_return = float(returns.loc[winner])
-    target_asset = winner if best_return > 0.0 else None
+    raw_target_asset = winner if best_return > 0.0 else None
+
+    # Identical stop definition to the SMA40 backtest. Its comparison is
+    # strict (<, not <=), and the SMA includes the JUST-COMPLETED weekly close.
+    # Test the RAW highest-ranked winner only; NEVER move into second place.
+    sma40 = weekly_close.rolling(
+        STOP_SMA_WEEKS, min_periods=STOP_SMA_WEEKS
+    ).mean().iloc[-1]
+    if not np.isfinite(sma40.to_numpy(dtype=float)).all():
+        raise RuntimeError(f"SMA{STOP_SMA_WEEKS} unavailable for one or more assets.")
+    sma40_stop_triggered = bool(
+        raw_target_asset is not None
+        and latest_open.loc[winner] < sma40.loc[winner]
+        and latest.loc[winner] < sma40.loc[winner]
+    )
+    target_asset = None if sma40_stop_triggered else raw_target_asset
 
     return MomentumSignal(
-        signal_week=pd.Timestamp(weekly.index[-1]),
-        start_week=pd.Timestamp(weekly.index[-(MOMENTUM_WEEKS + 1)]),
+        signal_week=pd.Timestamp(weekly_close.index[-1]),
+        start_week=pd.Timestamp(weekly_close.index[-(MOMENTUM_WEEKS + 1)]),
         returns_8w={asset: float(returns.loc[asset]) for asset in STRATEGY_ASSETS},
         start_closes={asset: float(start.loc[asset]) for asset in STRATEGY_ASSETS},
         latest_closes={asset: float(latest.loc[asset]) for asset in STRATEGY_ASSETS},
+        latest_opens={asset: float(latest_open.loc[asset]) for asset in STRATEGY_ASSETS},
+        sma40_values={asset: float(sma40.loc[asset]) for asset in STRATEGY_ASSETS},
         winner=winner,
         best_return=best_return,
+        raw_target_asset=raw_target_asset,
+        sma40_stop_triggered=sma40_stop_triggered,
         target_asset=target_asset,
     )
-
 
 # =============================================================================
 # ETORO CLIENT
@@ -1122,7 +1157,15 @@ def build_action_plan(
         actions.append({
             "Priority": 90, "Action": "HOLD_CASH", "Asset": "CASH",
             "InstrumentID": None, "PositionID": None, "Units": None, "Amount": None,
-            "Reason": f"best 8W return is non-positive ({signal.winner} {signal.best_return:+.2%})",
+            "Reason": (
+                f"SMA{STOP_SMA_WEEKS} STOP on {signal.winner}: completed weekly "
+                f"Open {signal.latest_opens[signal.winner]:.6g} and Close "
+                f"{signal.latest_closes[signal.winner]:.6g} < "
+                f"SMA{STOP_SMA_WEEKS} {signal.sma40_values[signal.winner]:.6g}; "
+                "remain CASH until stop clears or winner changes"
+                if signal.sma40_stop_triggered else
+                f"best 8W return is non-positive ({signal.winner} {signal.best_return:+.2%})"
+            ),
         })
     else:
         instrument_id = weekly_target.instrument_id
@@ -1427,17 +1470,28 @@ def print_signal(signal: MomentumSignal) -> None:
             "StartWeek": signal.start_week.date(),
             "StartClose": signal.start_closes[asset],
             "SignalWeek": signal.signal_week.date(),
+            "LatestOpen": signal.latest_opens[asset],
             "LatestClose": signal.latest_closes[asset],
+            "SMA40": signal.sma40_values[asset],
             "8WReturn": signal.returns_8w[asset],
             "Winner": "YES" if asset == signal.winner else "",
         })
     view = pd.DataFrame(rows)
     view["StartClose"] = view["StartClose"].map(lambda x: f"{x:.6g}")
+    view["LatestOpen"] = view["LatestOpen"].map(lambda x: f"{x:.6g}")
     view["LatestClose"] = view["LatestClose"].map(lambda x: f"{x:.6g}")
+    view["SMA40"] = view["SMA40"].map(lambda x: f"{x:.6g}")
     view["8WReturn"] = view["8WReturn"].map(lambda x: f"{x:+.2%}")
     print(view.to_string(index=False))
     print()
-    if signal.target_asset is None:
+    if signal.sma40_stop_triggered:
+        print(
+            f"TARGET: CASH | SMA{STOP_SMA_WEEKS} stop on {signal.winner}: "
+            f"weekly Open {signal.latest_opens[signal.winner]:.6g} AND Close "
+            f"{signal.latest_closes[signal.winner]:.6g} below SMA40 "
+            f"{signal.sma40_values[signal.winner]:.6g}; no second-best substitution."
+        )
+    elif signal.target_asset is None:
         print(f"TARGET: CASH | best return = {signal.winner} {signal.best_return:+.2%} <= 0")
     else:
         print(f"TARGET: {signal.target_asset} at 100% | best 8W return = {signal.best_return:+.2%}")
@@ -1449,7 +1503,10 @@ def print_target(target: Optional[TargetAsset], signal: MomentumSignal, strategy
         print("Strategy writes are disabled this run because the signal/target could not be validated safely.")
         return
     if target is None:
-        print(f"CASH target from signal week {signal.signal_week.date()}.")
+        if signal.sma40_stop_triggered:
+            print(f"CASH target from SMA{STOP_SMA_WEEKS} stop on {signal.winner} for {signal.signal_week.date()}.")
+        else:
+            print(f"CASH target from non-positive 8W momentum for {signal.signal_week.date()}.")
         return
     print(
         f"{target.asset} -> {target.etoro_symbol} | instrumentID={target.instrument_id} | "
@@ -1498,14 +1555,15 @@ def main() -> None:
 
     now_local = datetime.now(LOCAL_TZ)
 
-    print_rule("ETORO DEMO — REL_ABS_GOLD_SILVER_BTC_8W")
+    print_rule("ETORO DEMO — REL_ABS_GOLD_SILVER_BTC_8W + SMA40 STOP")
     print(f"Local time:                 {now_local:%Y-%m-%d %H:%M:%S %Z}")
     print(f"Strategy assets:            {', '.join(STRATEGY_ASSETS)}")
     print(f"Momentum horizon:           {MOMENTUM_WEEKS} completed Friday-ending weeks")
     print("Allocation rule:            100% strongest positive 8W asset; otherwise CASH")
     print(f"Execution enabled:          {EXECUTE_TRADES}")
     print(f"Cash reserve:               ${CASH_RESERVE_USD:.2f}")
-    print("Separate SMA entry/stop:    None")
+    print(f"Additional exit stop:       completed weekly Open AND Close < SMA{STOP_SMA_WEEKS}")
+    print("SMA40 winner veto:          CASH, not second-ranked asset; check weekly only")
 
     api_key, user_key = validate_credentials()
     client = EtoroClient(api_key, user_key)
@@ -1582,8 +1640,12 @@ def main() -> None:
         returns_8w={asset: np.nan for asset in STRATEGY_ASSETS},
         start_closes={asset: np.nan for asset in STRATEGY_ASSETS},
         latest_closes={asset: np.nan for asset in STRATEGY_ASSETS},
+        latest_opens={asset: np.nan for asset in STRATEGY_ASSETS},
+        sma40_values={asset: np.nan for asset in STRATEGY_ASSETS},
         winner="N/A",
         best_return=np.nan,
+        raw_target_asset=None,
+        sma40_stop_triggered=False,
         target_asset=None,
     )
 
