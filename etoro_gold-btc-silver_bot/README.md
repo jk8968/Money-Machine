@@ -9,7 +9,7 @@ Exit rule: A position is closed when another asset achieves the highest positive
 
 The script tracks exactly three assets: **Gold (GLD), Silver (SLV), Bitcoin (BTC)**
 
-The asset universe is configured in the RAW_UNIVERSE variable.
+The asset universe is configured in the **RAW_UNIVERSE** variable.
 
 ## Setup
 Download the files from the repositroy and put them in a permanent **folder**, where they will be able to reside without moving. 
