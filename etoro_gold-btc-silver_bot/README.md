@@ -5,7 +5,7 @@ A bot for managing a portfolio using relative and absolute momentum across gold,
 The bot runs once per week and compares the **8-week returns** of Gold, Silver and Bitcoin. 
 It selects the asset with the highest return and allocates 100% of account equity to it, provided its 8-week return is **positive**. If all three returns are zero or negative, portfolio moves to cash.
 
-Exit rule: A position is closed when another asset achieves the highest positive 8-week return, when all three assets have non-positive 8-week returns, or when both the weekly candle of the highest-ranked asset fall below its 40-week moving average.
+**Exit rule:** A position is closed when another asset achieves the highest positive 8-week return, when all three assets have non-positive 8-week returns, or when both the weekly candle of the highest-ranked asset fall below its 40-week moving average.
 
 The script tracks exactly three assets: **Gold (GLD), Silver (SLV), Bitcoin (BTC)**
 
