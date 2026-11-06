@@ -1,4 +1,4 @@
-# 3/6/12 Momentum Bot
+# Single Asset Beakout Bot
 
 A bot for managing a portfolio using momentum.
 
