@@ -1,4 +1,4 @@
 @echo off
 cd C:\Users\JakobKamnik\Desktop\function
-C:\Users\JakobKamnik\Desktop\function\venv\Scripts\python.exe etoro_breakout_top1_weekly.py
+C:\Users\JakobKamnik\Desktop\function\venv\Scripts\python.exe etoro_breakout_bot.py
 pause
