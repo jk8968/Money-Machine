@@ -1,17 +1,15 @@
-# 3/6/12 Momentum Bot
+# Gold/Silver/Bitcoin Rotation Bot
 
-A bot for managing a portfolio using momentum.
+A bot for managing a portfolio using relative and absolute momentum across gold, silver and Bitcoin.
 
-The bot runs once per week and ranks assets using: 20% × 3-month returns, 40% × 6-month returns and 40% × 12-month returns. It then selects the top **7 assets**, each position is roughly 14.29% of account equity.
+The bot runs once per week and compares the **8-week returns** of Gold, Silver and Bitcoin. 
+It selects the asset with the highest return and allocates 100% of account equity to it, provided its 8-week return is **positive**. If all three returns are zero or negative, portfolio moves to cash.
 
-Exit rule: a position is closed when weekly candle opens and closes below 50 weekly MA.
+Exit rule: A position is closed when another asset achieves the highest positive 8-week return, or when the highest return among all three assets is no longer positive.
 
-The script currently tracks 91 assets, including: 
-- **Crypto** (BTC, ETH, SOL, BNB, XRP, DOT, LINK),
-- **ETFs** (SPY, QQQ, XDJP.L, 2800.HK, GLD, SLV, PALL, PPLT, XLE, COPX, PSLV, URA, SIL, IXC)
-- **Stocks:** (PHG, TM, AAPL, META, NFLX, KO, NESM, PEP, BABA, MCD, ADBE, SHOP, NKE, SPOT, 0700.HK, OR.PA, 1810, SIE.DE, INTC, IBKR, DELL, MDLZ, 7974.T, ADSK, VOLV-B.ST, VOW.DE, GRMN, HEIA.NV, NVDA, MCHP, HPQ, EBAY, PUM, MGA, ZBRA, AMZN, MSFT, SMSN, AMD, ADS, TSM, MSI, RIO, CCJ, GOOGL, JNJ, SAP, CSCO, DIS, TXN, SND, BHP, SWK, 0992.HK, PAAS, WPM, AEM, NEM, B, FCX, ALB, XOM, FRES.L, AG, 01211.HK)
+The script tracks exactly three assets: **Gold (GLD), Silver (SLV), Bitcoin (BTC)**
 
-The full list can be expanded manually and is configured in **RAW_UNIVERSE** variable.
+The asset universe is configured in the RAW_UNIVERSE variable.
 
 ## Setup
 Download the files from the repositroy and put them in a permanent **folder**, where they will be able to reside without moving. 
