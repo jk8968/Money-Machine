@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableExtensions
-title 3/6/12 Momentum Bot - Installer
+title Gold/Silver/Bitcoin Rotation Bot - Installer
 
 echo ============================================================
-echo        3/6/12 MOMENTUM BOT - INSTALLER
+echo        GOLD/SILVER/BTC ROTATION BOT - INSTALLER
 echo ============================================================
 echo.
 
