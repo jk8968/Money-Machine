@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-title 3/6/12 Momentum Bot - Installer
+title Breakout Bot - Installer
 
 echo ============================================================
 echo        BREAKOUT BOT - INSTALLER
