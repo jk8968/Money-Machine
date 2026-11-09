@@ -2,7 +2,7 @@
 
 A bot for managing a portfolio using momentum.
 
-The bot runs once per week and ranks assets using: 20% × 3-month returns, 40% × 6-month returns and 40% × 12-month returns. It then selects the top **7 assets**, each position is roughly 14.29% of account equity.
+The bot runs once per week and ranks assets using: 40% × 3-month returns, 40% × 6-month returns and 20% × 12-month returns. It then selects the top **7 assets**, each position is roughly 14.29% of account equity.
 
 Exit rule: a position is closed when weekly candle opens and closes below 50 weekly MA.
 
