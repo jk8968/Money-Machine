@@ -1,10 +1,10 @@
-# Single Asset Beakout Bot
+# Etoro Beakout Bot
 
 A bot for managing a portfolio using weekly breakout and momentum strategy.
 
-The bot runs once per week and identifies assets whose weekly closing price breaks above **the high of the previous 50 weeks**, provided the closing price is also above the 100-week moving average. Eligible assets are then ranked by their **26-week returns**, and the bot selects the highest-ranked asset, allocating 100% of equity to it. If no assets qualify, the portfolio remains in cash.
+The bot runs once per week and identifies assets whose weekly closing price breaks above **the high of the previous 50 weeks**. Eligible assets are then ranked by their **52-week returns**, and the bot selects the three highest-ranking assets, allocating 33% of equity to it. If fewer than three assets qualify, equity is distributed equally among the eligible assets.
 
-Exit rule: A position is closed when the completed weekly candle closes below the **low of the previous 20 weeks**, or when another eligible asset takes the top position in the momentum ranking.
+Exit rule: A position is closed when the completed weekly candle closes below the **low of the previous 20 weeks**, when both the weekly open and close are below the **30-week moving average*, or when the asset drops out of the Top 3 momentum ranking. After a breakout exit, a new 50-week-high breakout is required before the asset becomes eligible again.
 
 The script currently tracks 91 assets, including: 
 - **Crypto** (BTC, ETH, SOL, BNB, XRP, DOT, LINK),
