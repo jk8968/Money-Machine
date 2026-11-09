@@ -1,36 +1,42 @@
 """
-eToro DEMO 50/20 WEEKLY BREAKOUT — TOP 1 / 26W MOMENTUM / SMA100 ENTRY
+eToro DEMO 50/20 WEEKLY BREAKOUT — TOP 3 / 52W MOMENTUM / SMA30 EXIT
 ========================================================================
 
-Same eToro DEMO API, execution, cash and portfolio-state framework as the
-uploaded 3/6/12 momentum bot. Only the strategy-dependent pieces change.
+Same eToro DEMO API, cash and portfolio-state framework as the provided bot.
+Only strategy-dependent signals, target construction, allocation and reporting
+are changed to match 52W TOP3 NO_FILTER STOP_SMA30 in the rolling backtest.
 
 Run once per week, preferably Monday (Europe/Ljubljana), after the preceding
-Friday-ending weekly candle is complete. Every run deterministically rebuilds
-signals from completed market history; no state file or database is used.
+Friday-ending weekly candle is complete. Signals are rebuilt from completed
+market history; no state file/database is used.
 
-Weekly breakout rules (from the user's 8-combination backtest):
-  - Build Friday-ending weekly OHLC (High=max daily High, Low=min daily Low).
-  - INACTIVE -> ELIGIBLE if weekly Close > highest weekly High of the PREVIOUS
-    50 weeks and weekly Close > its 100-week SMA. SMA100 is ENTRY-ONLY.
-  - Once eligible, remain eligible until weekly Close < lowest weekly Low
-    of the PREVIOUS 20 weeks. This is a state machine, not a rolling SMA stop.
-  - Rank eligible assets by weekly Close / Close 26 weeks earlier - 1.
-  - Hold the strongest eligible asset at (approximately) 100% equity, or cash
-    when no asset is eligible. Re-evaluate membership each completed week.
-  - Keep an unchanged winner; sell non-winners and use released cash to buy
-    the new winner. Resume buying a retained winner if significant cash is idle.
-  - Long / x1 only; eToro REAL preferred and CFD permitted as in original bot.
+Strategy:
+  - Build Friday-ending weekly OHLC (Open=first, High=max, Low=min,
+    Close=last daily bar).
+  - INACTIVE -> ELIGIBLE when weekly Close is above the highest weekly High
+    of the PREVIOUS 50 completed weeks. No entry SMA filter.
+  - ELIGIBLE -> INACTIVE when weekly Close is below the lowest weekly Low of
+    the PREVIOUS 20 weeks, OR both that weekly Open and Close are below
+    that week's 30-week SMA of weekly closes. Require a NEW breakout to reenter.
+  - Rank eligible assets by Close / Close 52 weeks prior - 1.
+  - Hold up to Top 3 broker-tradable assets, equal target weights. If only
+    one or two qualify, split the invested capital equally between them.
+    No eligible targets -> hold cash.
+  - Check weekly membership; rotate old names, keep unchanged holdings,
+    top up underweights when targets change or material cash sits idle.
+    Never continually trim positions merely because market values drift.
+  - Long / x1; prefer REAL, permit CFD as in the original demo bot.
 
-The existing demo account cleanup, pending-order guards, settlement waiting,
-rate limits and API endpoints are preserved. eToro market fills won't equal
-backtest next-US-session-close fills; asset universe and ticker availability
-also differ from the fixed 71-asset backtest.
+Existing API endpoints, credential handling, automatic-account cleanup,
+pending-order guards, close-settlement waits, rate limits and execution
+methods are preserved. Real eToro market fills, availability and costs
+can differ from the rolling backtest. Partial sales of retained overweights
+are not introduced; if weights drift past equal targets, exact matching is
+not possible until those holdings rotate out.
 
-Automatic-account cleanup: As in the original, this bot assumes the demo
-account is dedicated to it and closes out-of-universe direct holdings.
-
-Credentials: enter DEMO API keys in config or use environment variables.
+This bot assumes the demo account is dedicated to the strategy and cleans
+up non-strategy direct holdings exactly as in the original version.
+Credentials: enter DEMO API keys or set environment variables.
 Dependencies: pip install requests pandas numpy yfinance
 """
 
@@ -79,12 +85,12 @@ ETORO_USER_KEY = ""
 # Demo only. There are no real-account execution endpoints anywhere in this bot.
 EXECUTE_TRADES = True
 
-TARGET_POSITIONS = 1
-NEW_POSITION_WEIGHT = 1.0 / TARGET_POSITIONS   # 100% initial portfolio target
+TARGET_POSITIONS = 3
+NEW_POSITION_WEIGHT = 1.0 / TARGET_POSITIONS   # split across three when available
 BREAKOUT_HIGH_WEEKS = 50
 EXIT_LOW_WEEKS = 20
-MOMENTUM_WEEKS = 26
-ENTRY_SMA_WEEKS = 100
+MOMENTUM_WEEKS = 52
+STOP_SMA_WEEKS = 30  # additional exit; both completed-week open and close below SMA
 
 CASH_RESERVE_USD = 5.00
 MAX_WRITES_PER_RUN = 18  # below eToro's shared 20 writes / 60 sec quota
@@ -418,29 +424,34 @@ def completed_weekly_bars(frame: pd.DataFrame, now_local: datetime) -> pd.DataFr
 
 
 def weekly_features_before(frame: pd.DataFrame, now_local: datetime) -> Optional[Dict[str, Any]]:
-    """
-    Rebuild full historical breakout eligibility; never infer eligibility from
-    the current Close alone. SMA100 is checked only when eligibility switches
-    False -> True; after that only a close below the previous 20-week low exits.
+    """Rebuild 50/20 plus SMA30-exit eligibility from finished weekly bars.
+
+    A new breakout is required after any exit; SMA30 is never an entry filter.
+    The open/close SMA30 stop matches the rolling backtest's completed-week rule.
     """
     weekly = completed_weekly_bars(frame, now_local)
-    if len(weekly) < max(ENTRY_SMA_WEEKS, BREAKOUT_HIGH_WEEKS + 1, MOMENTUM_WEEKS + 1):
+    minimum_weeks = max(BREAKOUT_HIGH_WEEKS + 1, MOMENTUM_WEEKS + 1, STOP_SMA_WEEKS)
+    if len(weekly) < minimum_weeks:
         return None
     # An old/delisted price series must not compete with current tradable names.
     if weekly.index[-1] < most_recent_completed_friday(now_local) - pd.Timedelta(days=14):
         return None
 
     closes = weekly["Close"]
+    opens = weekly["Open"]
     prior_high = weekly["High"].shift(1).rolling(
         BREAKOUT_HIGH_WEEKS, min_periods=BREAKOUT_HIGH_WEEKS
     ).max()
     prior_low = weekly["Low"].shift(1).rolling(
         EXIT_LOW_WEEKS, min_periods=EXIT_LOW_WEEKS
     ).min()
-    ma100 = closes.rolling(ENTRY_SMA_WEEKS, min_periods=ENTRY_SMA_WEEKS).mean()
+    stop_ma = closes.rolling(STOP_SMA_WEEKS, min_periods=STOP_SMA_WEEKS).mean()
     momentum = closes / closes.shift(MOMENTUM_WEEKS) - 1.0
-    enters = (closes > prior_high) & (closes > ma100)
-    exits = closes < prior_low
+
+    enters = closes > prior_high  # NO_FILTER entry: breakout only
+    low_exits = closes < prior_low
+    sma_exits = (opens < stop_ma) & (closes < stop_ma)
+    exits = low_exits | sma_exits
 
     eligible = False
     latest_breakout = False
@@ -461,26 +472,27 @@ def weekly_features_before(frame: pd.DataFrame, now_local: datetime) -> Optional
 
     return {
         "WeekEnd": weekly.index[-1],
-        "Open": finite(weekly["Open"]),
+        "Open": finite(opens),
         "High": finite(weekly["High"]),
         "Low": finite(weekly["Low"]),
         "Close": finite(closes),
         "Prior50High": finite(prior_high),
         "Prior20Low": finite(prior_low),
-        "SMA100": finite(ma100),
-        "Momentum26": finite(momentum),
+        "SMA30": finite(stop_ma),
+        "Momentum52": finite(momentum),
         "Eligible": bool(eligible),
         "NewBreakout": bool(latest_breakout),
         "ExitThisWeek": bool(latest_exit),
+        "Stop20LowNow": bool(low_exits.iloc[-1]),
+        "StopSMA30Now": bool(sma_exits.iloc[-1]),
         "StopNow": bool(exits.iloc[-1]),
         "WeeklyBars": len(weekly),
     }
 
-
 def build_weekly_ranking(
     market_data: Dict[str, pd.DataFrame], now_local: datetime,
 ) -> Tuple[pd.DataFrame, Dict[str, Dict[str, Any]]]:
-    """Rank *all* qualified names by 26W return; preserve diagnostics."""
+    """Rank eligible assets by 52W momentum with unchanged stable tie handling."""
     rows = []
     features_by_asset: Dict[str, Dict[str, Any]] = {}
     for asset, frame in market_data.items():
@@ -488,24 +500,25 @@ def build_weekly_ranking(
         if features is None:
             continue
         features_by_asset[asset] = features
-        r26 = features["Momentum26"]
-        if not np.isfinite(r26):
+        r52 = features["Momentum52"]
+        if not np.isfinite(r52):
             continue
         rows.append({
-            "Asset": asset, "Momentum26": r26,
+            "Asset": asset, "Momentum52": r52,
             "Eligible": features["Eligible"],
             "WeekEnd": features["WeekEnd"],
+            "Open": features["Open"],
             "Close": features["Close"],
             "Prior50High": features["Prior50High"],
             "Prior20Low": features["Prior20Low"],
-            "SMA100": features["SMA100"],
+            "SMA30": features["SMA30"],
             "NewBreakout": features["NewBreakout"],
             "ExitThisWeek": features["ExitThisWeek"],
         })
     if not rows:
         raise RuntimeError("No assets have enough completed weekly OHLC for the 50/20 breakout.")
     ranking = pd.DataFrame(rows).sort_values(
-        ["Eligible", "Momentum26", "Asset"], ascending=[False, False, True]
+        ["Eligible", "Momentum52", "Asset"], ascending=[False, False, True]
     ).reset_index(drop=True)
     ranking.insert(0, "Rank", np.arange(1, len(ranking) + 1))
     return ranking, features_by_asset
@@ -1000,7 +1013,7 @@ class TargetAsset:
     weekly_close: float
     prior50_high: float
     prior20_low: float
-    sma100: float
+    sma30: float
     min_position_amount: float
 
 def resolve_universe_instruments(client: EtoroClient) -> Tuple[Dict[str, Dict[str, Any]], Dict[int, str]]:
@@ -1032,10 +1045,10 @@ def build_weekly_targets(
     ranking: pd.DataFrame,
     resolved_by_asset: Dict[str, Dict[str, Any]],
 ) -> Tuple[List[TargetAsset], pd.DataFrame]:
-    """
-    Top-one selection among statefully eligible names. Skip unsupported eToro
-    instruments, exactly as the original bot skipped ineligible broker symbols.
-    Zero eligible names is a legitimate CASH target, not a target-build error.
+    """Select up to Top 3 statefully eligible, eToro-tradable names by 52W return.
+
+    Skip unsupported instruments, as the old bot did. Zero eligible names is a
+    valid CASH target; 1 or 2 available targets use 1/N equal target weights.
     """
     eligible_rows = ranking.loc[ranking["Eligible"]].copy()
     potential_ids = [
@@ -1069,20 +1082,21 @@ def build_weekly_targets(
         selected.append(TargetAsset(
             rank=int(row["Rank"]), asset=asset,
             instrument_id=instrument_id, etoro_symbol=str(resolved["symbol"]),
-            momentum_score=float(row["Momentum26"]),
+            momentum_score=float(row["Momentum52"]),
             week_end=pd.Timestamp(row["WeekEnd"]),
             weekly_close=float(row["Close"]),
             prior50_high=float(row["Prior50High"]),
             prior20_low=float(row["Prior20Low"]),
-            sma100=float(row["SMA100"]), min_position_amount=min_amount,
+            sma30=float(row["SMA30"]), min_position_amount=min_amount,
         ))
         selected_ids.add(instrument_id)
-        decisions[asset] = "SELECTED TOP 1"
-        break
+        decisions[asset] = f"SELECTED TOP {TARGET_POSITIONS}"
+        if len(selected) >= TARGET_POSITIONS:
+            break
 
     diagnostics = ranking.copy()
     diagnostics["Decision"] = diagnostics.apply(
-        lambda r: decisions.get(r["Asset"], "Not in eligible 50/20 breakout state"), axis=1
+        lambda r: decisions.get(r["Asset"], "Not selected / not in eligible 50/20 breakout state"), axis=1
     )
     return selected, diagnostics
 
@@ -1153,9 +1167,9 @@ def build_action_plan(
                 })
                 full_close_ids.add(instrument_id)
 
-    # 1) Completed-week 20-low exits are the *only* strategy stop; SMA100
-    # is strictly an entry filter. Even if a target-ranking call fails, an
-    # existing holding can still be stopped on a verifiable weekly candle.
+    # 1) Completed-week 20-low OR weekly OPEN+CLOSE below SMA30 stop.
+    # Verify stops even if target selection fails. A fresh 50W breakout is
+    # required before a stopped-out asset becomes eligible again.
     weekly_features: Dict[str, Optional[Dict[str, Any]]] = {
         asset: weekly_features_before(frame, now_local)
         for asset, frame in market_data.items()
@@ -1169,24 +1183,31 @@ def build_action_plan(
         features = weekly_features.get(asset)
         if features is None or not bool(features["StopNow"]):
             continue
+        reasons = []
+        if features["Stop20LowNow"]:
+            reasons.append(
+                f"Close {features['Close']:.4g} < previous 20W Low {features['Prior20Low']:.4g}"
+            )
+        if features["StopSMA30Now"]:
+            reasons.append(
+                f"weekly Open {features['Open']:.4g} and Close {features['Close']:.4g} "
+                f"both < SMA30 {features['SMA30']:.4g}"
+            )
         if instrument_id in portfolio.pending_close_ids:
             actions.append({
                 "Priority": 10, "Action": "PENDING_CLOSE", "Asset": asset,
                 "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
-                "Reason": "20W-low exit already pending; no duplicate close",
+                "Reason": "weekly breakout/SMA30 stop exit already pending; no duplicate close",
             })
         else:
             actions.append({
                 "Priority": 1, "Action": "SELL_ALL_STOP", "Asset": asset,
                 "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
-                "Reason": (
-                    f"completed week {features['WeekEnd'].date()}: Close "
-                    f"{features['Close']:.4g} < previous 20W Low {features['Prior20Low']:.4g}"
-                ),
+                "Reason": f"completed week {features['WeekEnd'].date()}: " + " OR ".join(reasons),
             })
             full_close_ids.add(instrument_id)
 
-    # 2) Weekly Top 1 / cash reconciliation based on last completed Friday.
+    # 2) Weekly Top 3 / cash reconciliation based on last completed Friday.
     target_ids = {t.instrument_id for t in weekly_targets or []}
     if selection_active and weekly_targets is not None:
         for instrument_id, orders in portfolio.pending_open.items():
@@ -1205,7 +1226,7 @@ def build_action_plan(
                     "Priority": 0, "Action": "CANCEL_OPEN", "Asset": asset,
                     "InstrumentID": instrument_id, "PositionID": None, "Units": None,
                     "Amount": None, "OrderID": order_id,
-                    "Reason": "pending opening order is not this week's Top 1 target",
+                    "Reason": f"pending opening order is not this week's Top {TARGET_POSITIONS} target",
                 })
 
         for instrument_id in portfolio.current_ids - target_ids:
@@ -1216,72 +1237,150 @@ def build_action_plan(
                 actions.append({
                     "Priority": 10, "Action": "PENDING_CLOSE", "Asset": asset,
                     "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
-                    "Reason": "weekly exit/rotation close is already pending",
+                    "Reason": "weekly exit/rotation close already pending",
                 })
             else:
                 actions.append({
                     "Priority": 2, "Action": "SELL_ALL_REBALANCE", "Asset": asset,
                     "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
-                    "Reason": "not the highest-26W-momentum eligible breakout asset",
+                    "Reason": "not in this week's highest-52W-momentum eligible Top 3",
                 })
                 full_close_ids.add(instrument_id)
 
         if weekly_targets:
-            target = weekly_targets[0]
-            instrument_id = target.instrument_id
-            held = instrument_id in portfolio.current_ids
-            # If held as one of seven *old* holdings, invest newly freed cash
-            # to reach 100% Top 1. If it is already the sole holding and
-            # effectively fully invested, don't continually rebalance.
-            other_held = bool((portfolio.current_ids - {instrument_id}) - full_close_ids)
-            to_close = bool(full_close_ids - {instrument_id})
-            target_value = safe_float(portfolio.aggregate_values.get(instrument_id), np.nan)
-            cash_fraction = portfolio.available_cash / portfolio.equity if portfolio.equity > 0 else 0
+            # Match backtest's 1 / available N gross target, even for 1 or 2
+            # eligible assets. Do not continually trade unchanged targets simply
+            # because holdings drift. Refresh when membership changes or idle
+            # cash exceeds 1% (same cash-management intent as original bot).
+            n_targets = len(weekly_targets)
+            target_dollars = portfolio.equity / n_targets
+            membership_changed = portfolio.current_ids != target_ids
+            cash_fraction = portfolio.available_cash / portfolio.equity if portfolio.equity > 0 else 0.0
+            should_allocate = membership_changed or cash_fraction > 0.01
 
-            if instrument_id in portfolio.pending_open_ids:
-                actions.append({
-                    "Priority": 90, "Action": "PENDING_OPEN", "Asset": target.asset,
-                    "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
-                    "Reason": "winner opening order already pending",
-                })
-            elif instrument_id in portfolio.pending_close_ids or instrument_id in full_close_ids:
-                actions.append({
-                    "Priority": 90, "Action": "PENDING_CLOSE", "Asset": target.asset,
-                    "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
-                    "Reason": "winner has a pending/required close; wait for broker settlement",
-                })
-            elif (not held) or to_close or other_held or cash_fraction > 0.01:
-                if held and (not np.isfinite(target_value) or target_value <= 0):
+            # Estimate cash after scheduled exits, including already-pending
+            # closes. A migration from the old 100%-in-one-stock strategy must
+            # free capital to buy the other two targets. If existing *retained*
+            # winners are overweight enough to block required Top 3 entries,
+            # recycle them with the EXISTING full-close-and-buy workflow.
+            # Unchanged member sets never trigger this sizing rebalance.
+            released_ids = full_close_ids | (portfolio.pending_close_ids - target_ids)
+            expected_releases = sum(
+                max(0.0, safe_float(portfolio.aggregate_values.get(i), 0.0))
+                for i in released_ids
+            )
+            budget = max(0.0, portfolio.available_cash + expected_releases - CASH_RESERVE_USD)
+            recycle_ids = set()
+            if should_allocate and membership_changed:
+                shortfalls = 0.0
+                overweight_targets = []
+                for target in weekly_targets:
+                    instrument_id = target.instrument_id
+                    if instrument_id in portfolio.pending_open_ids or instrument_id in portfolio.pending_close_ids:
+                        continue
+                    if instrument_id in full_close_ids:
+                        continue
+                    held = instrument_id in portfolio.current_ids
+                    current_value = (safe_float(portfolio.aggregate_values.get(instrument_id), np.nan)
+                                     if held else 0.0)
+                    if not np.isfinite(current_value) or current_value < 0:
+                        continue
+                    shortfalls += max(0.0, target_dollars - current_value)
+                    if held and current_value > target_dollars + 0.01:
+                        overweight_targets.append((current_value - target_dollars, target, current_value))
+
+                for excess, target, current_value in sorted(overweight_targets, key=lambda x: -x[0]):
+                    if shortfalls <= budget + 0.01:
+                        break
+                    instrument_id = target.instrument_id
+                    # Closing then reopening a retained overweight position is
+                    # needed only when rotation cannot otherwise fund equal
+                    # targets; no new API action is introduced.
+                    recycle_ids.add(instrument_id)
+                    full_close_ids.add(instrument_id)
+                    actions.append({
+                        "Priority": 2, "Action": "SELL_ALL_REBALANCE", "Asset": target.asset,
+                        "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
+                        "Reason": (
+                            f"release ${excess:,.2f} of excess target exposure via full-close/reopen "
+                            f"to fund 1/{n_targets} equal weights after membership change"
+                        ),
+                    })
+                    budget += current_value
+                    shortfalls += target_dollars  # repurchase the recycled target
+
+            # Divide available proceeds across requested underweight purchases
+            # rather than letting the first name exhaust the cash before the
+            # remaining Top 3 candidates are processed.
+            valid_buys = []
+            desired_by_id = {}
+            for target in weekly_targets:
+                instrument_id = target.instrument_id
+                held = instrument_id in portfolio.current_ids and instrument_id not in recycle_ids
+                current_value = safe_float(portfolio.aggregate_values.get(instrument_id), np.nan) if held else 0.0
+                if instrument_id in portfolio.pending_open_ids:
+                    actions.append({
+                        "Priority": 90, "Action": "PENDING_OPEN", "Asset": target.asset,
+                        "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
+                        "Reason": "target opening order already pending",
+                    })
+                    continue
+                if instrument_id in portfolio.pending_close_ids or (
+                    instrument_id in full_close_ids and instrument_id not in recycle_ids
+                ):
+                    actions.append({
+                        "Priority": 90, "Action": "PENDING_CLOSE", "Asset": target.asset,
+                        "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
+                        "Reason": "target has pending/required close; wait for broker settlement",
+                    })
+                    continue
+                if not should_allocate:
+                    actions.append({
+                        "Priority": 90, "Action": "HOLD_TARGET", "Asset": target.asset,
+                        "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
+                        "Reason": "Top 3 unchanged; preserve drifted weights",
+                    })
+                    continue
+                if held and (not np.isfinite(current_value) or current_value <= 0):
                     actions.append({
                         "Priority": 90, "Action": "SKIP_BUY", "Asset": target.asset,
                         "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
-                        "Reason": "cannot verify value of existing winner; no blind top-up",
+                        "Reason": "cannot verify value of existing target; no blind top-up",
+                    })
+                    continue
+                desired_by_id[instrument_id] = round(max(0.0, target_dollars - current_value), 2)
+                valid_buys.append(target)
+
+            total_desired = sum(desired_by_id.values())
+            scale = min(1.0, budget / total_desired) if total_desired > 0 else 0.0
+            for target in valid_buys:
+                desired = round(desired_by_id[target.instrument_id] * scale, 2)
+                if desired <= 0:
+                    actions.append({
+                        "Priority": 90, "Action": "HOLD_TARGET", "Asset": target.asset,
+                        "InstrumentID": target.instrument_id, "PositionID": None, "Units": None, "Amount": None,
+                        "Reason": "target held / no available cash for additional purchase",
+                    })
+                elif desired + 1e-9 < target.min_position_amount:
+                    actions.append({
+                        "Priority": 90, "Action": "SKIP_BUY", "Asset": target.asset,
+                        "InstrumentID": target.instrument_id, "PositionID": None, "Units": None, "Amount": desired,
+                        "Reason": f"planned top-up below broker minimum ${target.min_position_amount:.2f}",
                     })
                 else:
-                    desired = portfolio.equity * NEW_POSITION_WEIGHT - (target_value if held else 0.0)
-                    desired = round(max(0.0, desired), 2)
-                    if desired + 1e-9 < target.min_position_amount:
-                        actions.append({
-                            "Priority": 90, "Action": "SKIP_BUY", "Asset": target.asset,
-                            "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": desired,
-                            "Reason": f"100% target shortfall below broker minimum ${target.min_position_amount:.2f}",
-                        })
-                    else:
-                        actions.append({
-                            "Priority": 5, "Action": "BUY_NEW", "Asset": target.asset,
-                            "InstrumentID": instrument_id, "PositionID": None, "Units": None,
-                            "Amount": desired,
-                            "Reason": (
-                                f"weekly Top 1 / 26W momentum {target.momentum_score:+.2%}; "
-                                + ("add to existing holding to reach full exposure" if held else "new full-equity winner")
-                            ),
-                        })
-            else:
-                actions.append({
-                    "Priority": 90, "Action": "HOLD_TARGET", "Asset": target.asset,
-                    "InstrumentID": instrument_id, "PositionID": None, "Units": None, "Amount": None,
-                    "Reason": "Top 1 unchanged; preserve existing quantities",
-                })
+                    actions.append({
+                        "Priority": 5, "Action": "BUY_NEW", "Asset": target.asset,
+                        "InstrumentID": target.instrument_id, "PositionID": None, "Units": None,
+                        "Amount": desired,
+                        "Reason": (
+                            f"weekly Top {TARGET_POSITIONS} / 52W momentum {target.momentum_score:+.2%}; "
+                            f"equal target = 1/{n_targets} of equity; "
+                            + ("reopen retained overweight target after settlement" if target.instrument_id in recycle_ids
+                               else "top up retained target" if target.instrument_id in portfolio.current_ids
+                               else "new breakout winner")
+                        ),
+                    })
+        # No weekly targets -> close unwanted positions above, leave proceeds as cash.
 
     if not actions:
         return pd.DataFrame(columns=[
@@ -1529,29 +1628,30 @@ def execute_plan(
 
 
 def print_momentum_table(ranking: pd.DataFrame, rows: int = 25) -> None:
-    print_rule(f"TOP {min(rows, len(ranking))} — ELIGIBLE 26-WEEK MOMENTUM")
-    cols = ["Rank", "Asset", "Momentum26", "Eligible", "WeekEnd", "Close", "Prior50High", "Prior20Low", "SMA100"]
+    print_rule(f"TOP {min(rows, len(ranking))} — ELIGIBLE 52-WEEK MOMENTUM")
+    cols = ["Rank", "Asset", "Momentum52", "Eligible", "WeekEnd", "Close", "Prior50High", "Prior20Low", "SMA30"]
     view = ranking.head(rows)[cols].copy()
-    view["Momentum26"] = view["Momentum26"].map(lambda x: f"{x:+.2%}")
+    view["Momentum52"] = view["Momentum52"].map(lambda x: f"{x:+.2%}")
     print(view.to_string(index=False))
 
 
 def print_target_diagnostics(diagnostics: pd.DataFrame, targets: List[TargetAsset]) -> None:
-    print_rule("WEEKLY 50/20 BREAKOUT + SMA100 ENTRY / 26W RANK")
+    print_rule("WEEKLY 50/20 BREAKOUT + SMA30 EXIT / 52W RANK")
     if not diagnostics.empty:
         view = diagnostics.head(35).copy()
-        view["Momentum26"] = view["Momentum26"].map(lambda x: f"{x:+.2%}")
-        columns = ["Rank", "Asset", "Momentum26", "Eligible", "NewBreakout", "ExitThisWeek", "WeekEnd", "Decision"]
+        view["Momentum52"] = view["Momentum52"].map(lambda x: f"{x:+.2%}")
+        columns = ["Rank", "Asset", "Momentum52", "Eligible", "NewBreakout", "ExitThisWeek", "WeekEnd", "Decision"]
         print(view[columns].to_string(index=False))
-    print_rule("LATEST COMPLETED WEEKLY TOP 1 TARGET")
+    print_rule(f"LATEST COMPLETED WEEKLY TOP {TARGET_POSITIONS} TARGETS")
     if not targets:
-        print("No eligible, broker-tradable winner: strategy target is 100% CASH.")
+        print("No eligible, broker-tradable asset: strategy target is 100% CASH.")
     else:
-        t = targets[0]
-        print(f"Winner: {t.asset} / eToro {t.etoro_symbol} / ID {t.instrument_id}")
-        print(f"Week end: {t.week_end.date()} | 26W return: {t.momentum_score:+.2%}")
-        print(f"Close: {t.weekly_close:.5g} | SMA100: {t.sma100:.5g} (entry only)")
-        print(f"Prev 50W high: {t.prior50_high:.5g} | Prev 20W low: {t.prior20_low:.5g}")
+        for i, t in enumerate(targets, 1):
+            print(f"{i}/{len(targets)}: {t.asset} / eToro {t.etoro_symbol} / ID {t.instrument_id}")
+            print(f"  Week end: {t.week_end.date()} | 52W return: {t.momentum_score:+.2%}")
+            print(f"  Close: {t.weekly_close:.5g} | SMA30 exit MA: {t.sma30:.5g}")
+            print(f"  Prev 50W high: {t.prior50_high:.5g} | Prev 20W low: {t.prior20_low:.5g}")
+        print(f"Target allocation: {1.0 / len(targets):.2%} each of equity (subject to fees/settlement).")
 
 
 def print_action_plan(plan: pd.DataFrame) -> None:
@@ -1593,16 +1693,16 @@ def main() -> None:
 
     now_local = datetime.now(LOCAL_TZ)
     last_friday = most_recent_completed_friday(now_local)
-    print_rule("ETORO DEMO — 50/20 WEEKLY BREAKOUT / TOP 1 / 26W / SMA100 ENTRY")
+    print_rule("ETORO DEMO — 50/20 WEEKLY BREAKOUT / TOP 3 / 52W / SMA30 EXIT")
     print(f"Local time:                 {now_local:%Y-%m-%d %H:%M:%S %Z}")
     print(f"Universe size (deduped):    {len(UNIVERSE)}")
     print(f"Frozen weekly signal:       {last_friday.date()} (Friday close)")
     print(f"Execution enabled:          {EXECUTE_TRADES}")
     print(f"Target holdings:            {TARGET_POSITIONS} x {NEW_POSITION_WEIGHT:.0%} of equity")
-    print("Entry:                     Close > previous 50W high AND > SMA100")
-    print("Exit:                      Close < previous 20W low; SMA100 is entry-only")
-    print("Ranking:                   highest 26W return among eligible assets")
-    print("Selection cycle:           EVERY completed week; cash if no eligible winner")
+    print("Entry:                     Close > previous 50W high (NO SMA entry filter)")
+    print("Exit:                      Close < prior 20W low OR weekly Open AND Close < SMA30")
+    print("Ranking:                   highest 52W return among eligible assets")
+    print("Selection cycle:           EVERY completed week; Top 3 or fewer, cash if none")
 
     api_key, user_key = validate_credentials()
     client = EtoroClient(api_key, user_key)
@@ -1652,7 +1752,7 @@ def main() -> None:
         print(f"{type(error).__name__}: {error}")
         traceback.print_exc()
         weekly_targets = None
-        print("Weekly target changes disabled; 20-week-low exits can still be planned.")
+        print("Weekly target changes disabled; 20-week-low and SMA30 exits can still be planned.")
 
     plan = build_action_plan(
         client=client, portfolio=portfolio,
@@ -1666,7 +1766,7 @@ def main() -> None:
         print_rule("MARKET DATA WARNINGS")
         for asset, error in download_failures.items():
             print(f"{asset:<10} {error}")
-        print("WARNING: incomplete universe can change Top 1 selection from the backtest.")
+        print("WARNING: incomplete universe can change Top 3 selection from the backtest.")
         print("Assets without data cannot enter the ranking or be evaluated for stops.")
 
     execute_plan(client, portfolio, plan)
