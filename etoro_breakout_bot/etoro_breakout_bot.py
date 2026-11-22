@@ -85,7 +85,7 @@ ETORO_USER_KEY = ""
 # Demo only. There are no real-account execution endpoints anywhere in this bot.
 EXECUTE_TRADES = True
 
-TARGET_POSITIONS = 3
+TARGET_POSITIONS = 1
 NEW_POSITION_WEIGHT = 1.0 / TARGET_POSITIONS   # split across three when available
 BREAKOUT_HIGH_WEEKS = 50
 EXIT_LOW_WEEKS = 20
