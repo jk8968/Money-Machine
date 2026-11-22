@@ -88,8 +88,8 @@ LOCAL_TZ = ZoneInfo("Europe/Ljubljana")
 # -----------------------------------------------------------------------------
 # PASTE YOUR eTORO DEMO API CREDENTIALS HERE
 # -----------------------------------------------------------------------------
-ETORO_API_KEY = 
-ETORO_USER_KEY = 
+ETORO_API_KEY = ""
+ETORO_USER_KEY = ""
 
 # Demo only. There are no real-account execution endpoints anywhere in this bot.
 EXECUTE_TRADES = True
@@ -174,6 +174,11 @@ RAW_UNIVERSE = [
     "NVDA", "MCHP", "HPQ", "EBAY", "PUM", "MGA", "ZBRA", "AMZN", "MSFT", "SMSN",
     "AMD", "ADS", "TSM", "MSI", "RIO", "CCJ", "GOOGL", "JNJ", "SAP", "CSCO",
     "DIS", "TXN", "SND", "BHP", "SWK", "0992.HK", "PAAS", "WPM", "AEM", "NEM", "B", "FCX", "ALB", "XOM", "FRES.L", "AG", "01211.HK",
+
+    # Added companies
+    "RNO.PA", "RPI.L", "STLAM.MI", "STM", "CDI.PA", "SBUX", "V", "MA",
+    "NLB", "KRKG", "BAYN.DE", "BMW.DE", "MBG.DE", "IVG.MI", "NVS",
+    "ABBN.SW", "AIR.PA", "UCG.MI", "UL", "OMV.VI", "LOGN.SW", "PIRC.MI", "LISN.SW",
 ]
 
 # Yahoo Finance symbol candidates. First successful candidate is used.
@@ -206,6 +211,31 @@ YAHOO_CANDIDATES: Dict[str, List[str]] = {
     "0992.HK": ["0992.HK"],
     "01211.HK": ["1211.HK", "01211.HK"],
     "FRES.L": ["FRES.L"],
+
+    # Added companies
+    "RNO.PA": ["RNO.PA"],
+    "RPI.L": ["RPI.L"],
+    "STLAM.MI": ["STLAM.MI"],
+    "STM": ["STM"],
+    "CDI.PA": ["CDI.PA"],
+    "SBUX": ["SBUX"],
+    "V": ["V"],
+    "MA": ["MA"],
+    "NLB": ["NLB.IL"],
+    "KRKG": ["KRK.WA"],
+    "BAYN.DE": ["BAYN.DE"],
+    "BMW.DE": ["BMW.DE"],
+    "MBG.DE": ["MBG.DE"],
+    "IVG.MI": ["IVG.MI"],
+    "NVS": ["NVS"],
+    "ABBN.SW": ["ABBN.SW"],
+    "AIR.PA": ["AIR.PA"],
+    "UCG.MI": ["UCG.MI"],
+    "UL": ["UL"],
+    "OMV.VI": ["OMV.VI"],
+    "LOGN.SW": ["LOGN.SW"],
+    "PIRC.MI": ["PIRC.MI"],
+    "LISN.SW": ["LISN.SW"],
 }
 
 # eToro symbol aliases. The code first searches the complete eToro instrument
@@ -236,6 +266,31 @@ ETORO_CANDIDATES: Dict[str, List[str]] = {
     "0992.HK": ["0992.HK", "0992"],
     "01211.HK": ["01211.HK", "1211.HK", "1211"],
     "FRES.L": ["FRES.L", "FRES"],
+
+    # Added companies
+    "RNO.PA": ["RNO.PA", "RNO"],
+    "RPI.L": ["RPI.L", "RPI"],
+    "STLAM.MI": ["STLAM.MI", "STLAM"],
+    "STM": ["STM.US", "STM"],
+    "CDI.PA": ["CDI.PA", "CDI"],
+    "SBUX": ["SBUX"],
+    "V": ["V"],
+    "MA": ["MA"],
+    "NLB": ["NLB", "NLB.IL"],
+    "KRKG": ["KRKG", "KRK.WA", "KRK"],
+    "BAYN.DE": ["BAYN.DE", "BAYN"],
+    "BMW.DE": ["BMW.DE", "BMW"],
+    "MBG.DE": ["MBG.DE", "MBG"],
+    "IVG.MI": ["IVG.MI", "IVG"],
+    "NVS": ["NVS"],
+    "ABBN.SW": ["ABBN.ZU", "ABBN.SW", "ABBN", "ABBNY"],
+    "AIR.PA": ["AIR.PA", "AIR"],
+    "UCG.MI": ["UCG.MI", "UCG"],
+    "UL": ["UL.US", "ULVR.L", "UNA.NV", "UL"],
+    "OMV.VI": ["OMV.VI", "OMV"],
+    "LOGN.SW": ["LOGN.ZU", "LOGN.SW", "LOGN", "LOGI"],
+    "PIRC.MI": ["PIRC.MI", "PIRC"],
+    "LISN.SW": ["LISN.ZU", "LISN.SW", "LISN", "LISP.ZU"],
 }
 
 
