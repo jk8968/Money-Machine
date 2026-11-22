@@ -87,9 +87,9 @@ EXECUTE_TRADES = True
 
 TARGET_POSITIONS = 3
 NEW_POSITION_WEIGHT = 1.0 / TARGET_POSITIONS   # split across three when available
-BREAKOUT_HIGH_WEEKS = 26
+BREAKOUT_HIGH_WEEKS = 50
 EXIT_LOW_WEEKS = 20
-MOMENTUM_WEEKS = 52
+MOMENTUM_WEEKS = 26
 STOP_SMA_WEEKS = 30  # additional exit; both completed-week open and close below SMA
 
 CASH_RESERVE_USD = 5.00
